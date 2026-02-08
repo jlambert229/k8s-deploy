@@ -1,0 +1,41 @@
+# Copy to terraform.tfvars and fill in values.
+# This file is git-ignored — never commit secrets.
+
+# --- Required ---
+proxmox_endpoint  = "https://proxmox.example.com:8006"
+proxmox_api_token = "user@pam!token-name=<YOUR-TOKEN-UUID>"
+
+# --- Cluster ---
+# cluster_name = "talos"
+# cluster_vip  = "10.0.0.69"      # Set for HA (3 CP nodes)
+
+# --- Talos ---
+# talos_version    = "v1.9.2"
+# talos_extensions = ["qemu-guest-agent"]
+# install_disk     = "/dev/sda"
+
+# --- Network ---
+# network_cidr = "10.0.0.0/24"
+# gateway      = "10.0.0.1"
+# nameservers  = ["1.1.1.1", "8.8.8.8"]
+
+# --- Control Plane ---
+# controlplane_count     = 1
+# controlplane_cpu       = 2
+# controlplane_memory_mb = 4096
+# controlplane_disk_gb   = 20
+
+# --- Workers ---
+# worker_count     = 2
+# worker_cpu       = 2
+# worker_memory_mb = 4096
+# worker_disk_gb   = 50
+
+# --- VM IDs & IP Offsets ---
+# vm_id_base       = 400      # CP: 400, 401, 402  |  Workers: 410, 411, ...
+# cp_ip_offset     = 70       # CP IPs: .70, .71, .72
+# worker_ip_offset = 80       # Worker IPs: .80, .81, ...
+
+# --- Storage ---
+# image_storage = "local"       # Where Talos ISO is downloaded
+# disk_storage  = "local-lvm"   # Where VM disks live
