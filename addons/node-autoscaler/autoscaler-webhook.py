@@ -50,7 +50,7 @@ def get_cluster_metrics():
     try:
         config.load_kube_config()
         v1 = client.CoreV1Api()
-        
+
         # Get node metrics using kubectl top (requires metrics-server)
         result = subprocess.run(
             ["kubectl", "top", "nodes", "--no-headers"],
@@ -58,23 +58,23 @@ def get_cluster_metrics():
             text=True,
             check=True
         )
-        
+
         lines = result.stdout.strip().split("\n")
         total_cpu_usage = 0
         total_cpu_capacity = 0
-        
+
         for line in lines:
             parts = line.split()
             if len(parts) >= 3:
                 # Parse CPU usage (e.g., "1234m" -> 1.234 cores)
                 cpu_usage = parts[1].rstrip("m")
                 cpu_pct = parts[2].rstrip("%")
-                
+
                 total_cpu_usage += float(cpu_pct)
-        
+
         avg_cpu = total_cpu_usage / len(lines) if lines else 0
         return avg_cpu
-    
+
     except Exception as e:
         print(f"Error getting metrics: {e}", flush=True)
         return None
@@ -90,11 +90,11 @@ def get_current_worker_count():
             text=True,
             check=True
         )
-        
+
         outputs = json.loads(result.stdout)
         worker_ips = outputs.get("worker_ips", {}).get("value", {})
         return len(worker_ips)
-    
+
     except Exception as e:
         print(f"Error getting worker count: {e}", flush=True)
         return None
@@ -103,15 +103,15 @@ def get_current_worker_count():
 def scale_workers(new_count):
     """Scale worker nodes by updating Terraform variable and applying."""
     global last_scale_time
-    
+
     try:
         print(f"[{datetime.now()}] Scaling workers to {new_count}", flush=True)
-        
+
         # Update terraform.tfvars
         tfvars_path = os.path.join(TERRAFORM_DIR, "terraform.tfvars")
         with open(tfvars_path, "r") as f:
             lines = f.readlines()
-        
+
         # Replace worker_count line
         with open(tfvars_path, "w") as f:
             for line in lines:
@@ -119,18 +119,18 @@ def scale_workers(new_count):
                     f.write(f"worker_count = {new_count}\n")
                 else:
                     f.write(line)
-        
+
         # Apply Terraform changes
         subprocess.run(
             ["terraform", "apply", "-auto-approve"],
             cwd=TERRAFORM_DIR,
             check=True
         )
-        
+
         last_scale_time = time.time()
         print(f"[{datetime.now()}] Successfully scaled to {new_count} workers", flush=True)
         return True
-    
+
     except Exception as e:
         print(f"Error scaling workers: {e}", flush=True)
         return False
@@ -139,25 +139,25 @@ def scale_workers(new_count):
 def autoscaler_loop():
     """Main autoscaler loop."""
     global last_scale_time
-    
+
     print(f"Starting autoscaler (check every {CHECK_INTERVAL}s)", flush=True)
     print(f"Scale up threshold: {SCALE_UP_THRESHOLD}% CPU", flush=True)
     print(f"Scale down threshold: {SCALE_DOWN_THRESHOLD}% CPU", flush=True)
     print(f"Worker range: {MIN_WORKERS}-{MAX_WORKERS}", flush=True)
-    
+
     while True:
         try:
             # Get current state
             avg_cpu = get_cluster_metrics()
             current_workers = get_current_worker_count()
-            
+
             if avg_cpu is None or current_workers is None:
                 print(f"[{datetime.now()}] Skipping cycle - metrics unavailable", flush=True)
                 time.sleep(CHECK_INTERVAL)
                 continue
-            
+
             print(f"[{datetime.now()}] CPU: {avg_cpu:.1f}%, Workers: {current_workers}", flush=True)
-            
+
             # Check cooldown
             time_since_scale = time.time() - last_scale_time
             if time_since_scale < COOLDOWN_SECONDS:
@@ -165,25 +165,25 @@ def autoscaler_loop():
                 print(f"  In cooldown period ({remaining:.0f}s remaining)", flush=True)
                 time.sleep(CHECK_INTERVAL)
                 continue
-            
+
             # Scale up if CPU is high
             if avg_cpu > SCALE_UP_THRESHOLD and current_workers < MAX_WORKERS:
                 new_count = min(current_workers + 1, MAX_WORKERS)
                 print(f"  High CPU detected - scaling up to {new_count}", flush=True)
                 scale_workers(new_count)
-            
+
             # Scale down if CPU is low
             elif avg_cpu < SCALE_DOWN_THRESHOLD and current_workers > MIN_WORKERS:
                 new_count = max(current_workers - 1, MIN_WORKERS)
                 print(f"  Low CPU detected - scaling down to {new_count}", flush=True)
                 scale_workers(new_count)
-            
+
             else:
                 print(f"  No scaling needed", flush=True)
-        
+
         except Exception as e:
             print(f"[{datetime.now()}] Error in autoscaler loop: {e}", flush=True)
-        
+
         time.sleep(CHECK_INTERVAL)
 
 

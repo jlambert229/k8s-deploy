@@ -32,7 +32,7 @@ check_kubeconfig() {
 deploy_metrics_server() {
     log "Deploying Metrics Server..."
     kubectl apply -f "${SCRIPT_DIR}/metrics-server/metrics-server.yaml"
-    
+
     log "Waiting for Metrics Server to be ready (max 120s)..."
     if kubectl wait --for=condition=ready pod -l k8s-app=metrics-server -n kube-system --timeout=120s; then
         log "✓ Metrics Server is ready"
@@ -40,10 +40,10 @@ deploy_metrics_server() {
         error "Metrics Server failed to become ready"
         return 1
     fi
-    
+
     # Wait a bit for metrics to be available
     sleep 10
-    
+
     log "Testing metrics availability..."
     if kubectl top nodes &>/dev/null; then
         log "✓ Metrics are available"
@@ -56,7 +56,7 @@ deploy_metrics_server() {
 deploy_vpa() {
     log "Deploying Vertical Pod Autoscaler..."
     kubectl apply -f "${SCRIPT_DIR}/vpa/vpa.yaml"
-    
+
     log "Waiting for VPA components to be ready (max 120s)..."
     if kubectl wait --for=condition=ready pod -l app=vpa-admission-controller -n vpa-system --timeout=120s && \
        kubectl wait --for=condition=ready pod -l app=vpa-recommender -n vpa-system --timeout=120s && \
@@ -74,10 +74,10 @@ deploy_examples() {
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         log "Deploying HPA example..."
         kubectl apply -f "${SCRIPT_DIR}/examples/hpa-example.yaml"
-        
+
         log "Deploying VPA example..."
         kubectl apply -f "${SCRIPT_DIR}/examples/vpa-example.yaml"
-        
+
         log "✓ Examples deployed"
         echo
         echo "Monitor with:"
@@ -108,18 +108,18 @@ show_summary() {
 
 main() {
     log "Starting autoscaling deployment..."
-    
+
     check_kubeconfig
-    
+
     # Deploy core components
     deploy_metrics_server || { error "Failed to deploy Metrics Server"; exit 1; }
     echo
     deploy_vpa || { error "Failed to deploy VPA"; exit 1; }
     echo
-    
+
     # Optional examples
     deploy_examples
-    
+
     # Summary
     show_summary
 }
