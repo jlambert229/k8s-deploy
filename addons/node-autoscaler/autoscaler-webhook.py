@@ -76,7 +76,7 @@ def get_cluster_metrics():
         return avg_cpu
     
     except Exception as e:
-        print(f"Error getting metrics: {e}")
+        print(f"Error getting metrics: {e}", flush=True)
         return None
 
 
@@ -96,7 +96,7 @@ def get_current_worker_count():
         return len(worker_ips)
     
     except Exception as e:
-        print(f"Error getting worker count: {e}")
+        print(f"Error getting worker count: {e}", flush=True)
         return None
 
 
@@ -105,7 +105,7 @@ def scale_workers(new_count):
     global last_scale_time
     
     try:
-        print(f"[{datetime.now()}] Scaling workers to {new_count}")
+        print(f"[{datetime.now()}] Scaling workers to {new_count}", flush=True)
         
         # Update terraform.tfvars
         tfvars_path = os.path.join(TERRAFORM_DIR, "terraform.tfvars")
@@ -128,11 +128,11 @@ def scale_workers(new_count):
         )
         
         last_scale_time = time.time()
-        print(f"[{datetime.now()}] Successfully scaled to {new_count} workers")
+        print(f"[{datetime.now()}] Successfully scaled to {new_count} workers", flush=True)
         return True
     
     except Exception as e:
-        print(f"Error scaling workers: {e}")
+        print(f"Error scaling workers: {e}", flush=True)
         return False
 
 
@@ -140,10 +140,10 @@ def autoscaler_loop():
     """Main autoscaler loop."""
     global last_scale_time
     
-    print(f"Starting autoscaler (check every {CHECK_INTERVAL}s)")
-    print(f"Scale up threshold: {SCALE_UP_THRESHOLD}% CPU")
-    print(f"Scale down threshold: {SCALE_DOWN_THRESHOLD}% CPU")
-    print(f"Worker range: {MIN_WORKERS}-{MAX_WORKERS}")
+    print(f"Starting autoscaler (check every {CHECK_INTERVAL}s)", flush=True)
+    print(f"Scale up threshold: {SCALE_UP_THRESHOLD}% CPU", flush=True)
+    print(f"Scale down threshold: {SCALE_DOWN_THRESHOLD}% CPU", flush=True)
+    print(f"Worker range: {MIN_WORKERS}-{MAX_WORKERS}", flush=True)
     
     while True:
         try:
@@ -152,37 +152,37 @@ def autoscaler_loop():
             current_workers = get_current_worker_count()
             
             if avg_cpu is None or current_workers is None:
-                print(f"[{datetime.now()}] Skipping cycle - metrics unavailable")
+                print(f"[{datetime.now()}] Skipping cycle - metrics unavailable", flush=True)
                 time.sleep(CHECK_INTERVAL)
                 continue
             
-            print(f"[{datetime.now()}] CPU: {avg_cpu:.1f}%, Workers: {current_workers}")
+            print(f"[{datetime.now()}] CPU: {avg_cpu:.1f}%, Workers: {current_workers}", flush=True)
             
             # Check cooldown
             time_since_scale = time.time() - last_scale_time
             if time_since_scale < COOLDOWN_SECONDS:
                 remaining = COOLDOWN_SECONDS - time_since_scale
-                print(f"  In cooldown period ({remaining:.0f}s remaining)")
+                print(f"  In cooldown period ({remaining:.0f}s remaining)", flush=True)
                 time.sleep(CHECK_INTERVAL)
                 continue
             
             # Scale up if CPU is high
             if avg_cpu > SCALE_UP_THRESHOLD and current_workers < MAX_WORKERS:
                 new_count = min(current_workers + 1, MAX_WORKERS)
-                print(f"  High CPU detected - scaling up to {new_count}")
+                print(f"  High CPU detected - scaling up to {new_count}", flush=True)
                 scale_workers(new_count)
             
             # Scale down if CPU is low
             elif avg_cpu < SCALE_DOWN_THRESHOLD and current_workers > MIN_WORKERS:
                 new_count = max(current_workers - 1, MIN_WORKERS)
-                print(f"  Low CPU detected - scaling down to {new_count}")
+                print(f"  Low CPU detected - scaling down to {new_count}", flush=True)
                 scale_workers(new_count)
             
             else:
-                print(f"  No scaling needed")
+                print(f"  No scaling needed", flush=True)
         
         except Exception as e:
-            print(f"[{datetime.now()}] Error in autoscaler loop: {e}")
+            print(f"[{datetime.now()}] Error in autoscaler loop: {e}", flush=True)
         
         time.sleep(CHECK_INTERVAL)
 
