@@ -120,6 +120,28 @@ talos_extensions = [
 ]
 ```
 
+## Autoscaling
+
+This repo includes comprehensive autoscaling for both pods and nodes:
+
+- **HPA (Horizontal Pod Autoscaler)** - Scale pod replicas based on CPU/memory
+- **VPA (Vertical Pod Autoscaler)** - Adjust pod resource requests/limits
+- **Node Autoscaler** - Add/remove worker VMs based on cluster load
+
+See **[AUTOSCALING.md](AUTOSCALING.md)** for full documentation and deployment instructions.
+
+Quick deploy:
+
+```bash
+# Deploy pod autoscaling (HPA + VPA)
+./addons/deploy-autoscaling.sh
+
+# Enable node autoscaling (see AUTOSCALING.md)
+cd addons/node-autoscaler
+pip install -r requirements.txt
+python autoscaler-webhook.py
+```
+
 ## Upgrading Talos
 
 1. Get the schematic ID: `terraform output talos_schematic_id`

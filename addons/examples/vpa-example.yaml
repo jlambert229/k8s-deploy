@@ -1,0 +1,71 @@
+---
+# Example: Vertical Pod Autoscaler (VPA)
+# Automatically adjusts CPU/memory requests and limits
+# Requires: VPA controller
+
+# Sample deployment with VPA
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-with-vpa
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: app-with-vpa
+  template:
+    metadata:
+      labels:
+        app: app-with-vpa
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.27
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+---
+# VPA in "Auto" mode - will update running pods
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: app-with-vpa
+  namespace: default
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: app-with-vpa
+  updatePolicy:
+    updateMode: "Auto"  # Options: "Off", "Initial", "Recreate", "Auto"
+  resourcePolicy:
+    containerPolicies:
+    - containerName: app
+      minAllowed:
+        cpu: 50m
+        memory: 64Mi
+      maxAllowed:
+        cpu: 2000m
+        memory: 2Gi
+      controlledResources:
+      - cpu
+      - memory
+---
+# VPA in "Recommend" mode - only provides recommendations without updating
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: app-recommend-only
+  namespace: default
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: app-with-vpa
+  updatePolicy:
+    updateMode: "Off"  # Just provide recommendations
