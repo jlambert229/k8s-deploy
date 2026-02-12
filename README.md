@@ -1,5 +1,8 @@
 # k8s-deploy
 
+![pre-commit](https://github.com/jlambert229/k8s-deploy/actions/workflows/pre-commit.yml/badge.svg)
+![GitHub last commit](https://img.shields.io/github/last-commit/jlambert229/k8s-deploy)
+
 Deploy a [Talos Linux](https://www.talos.dev/) Kubernetes cluster on libvirt/KVM using Terraform.
 
 Uses [terraform-libvirt](https://github.com/jlambert229/terraform-libvirt) for VM provisioning (with cloud-init for initial networking) and the [Talos Terraform provider](https://registry.terraform.io/providers/siderolabs/talos/latest) for cluster orchestration.
