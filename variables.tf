@@ -1,32 +1,9 @@
-# --- Proxmox Connection ---
+# --- Libvirt ---
 
-variable "proxmox_endpoint" {
-  description = "Proxmox API URL (e.g. https://10.0.0.10:8006)."
+variable "libvirt_uri" {
+  description = "Libvirt connection URI (e.g. qemu:///system or qemu+ssh://user@host/system)."
   type        = string
-}
-
-variable "proxmox_api_token" {
-  description = "API token in the format USER@REALM!TOKENID=SECRET."
-  type        = string
-  sensitive   = true
-}
-
-variable "proxmox_insecure" {
-  description = "Skip TLS verification (true for self-signed certs)."
-  type        = bool
-  default     = true
-}
-
-variable "proxmox_ssh_user" {
-  description = "SSH user for provider operations on the Proxmox host."
-  type        = string
-  default     = "root"
-}
-
-variable "proxmox_node" {
-  description = "Target Proxmox node name."
-  type        = string
-  default     = "pve"
+  default     = "qemu:///system"
 }
 
 # --- Cluster ---
@@ -38,7 +15,7 @@ variable "cluster_name" {
 }
 
 variable "cluster_vip" {
-  description = "Virtual IP for the Kubernetes API. Null uses the first control plane IP."
+  description = "Virtual IP for the Kubernetes API (shared across control plane nodes). Null uses the first control plane IP."
   type        = string
   default     = null
 }
@@ -63,16 +40,43 @@ variable "talos_factory_url" {
   default     = "https://factory.talos.dev"
 }
 
-variable "install_disk" {
-  description = "Disk device Talos installs to inside the VM."
+variable "talos_image_path" {
+  description = "Absolute path to the Talos disk image on the KVM host. Downloaded from the image factory (see README)."
   type        = string
-  default     = "/dev/sda"
+
+  validation {
+    condition     = startswith(var.talos_image_path, "/")
+    error_message = "Image path must be an absolute path (starting with /)."
+  }
+}
+
+variable "talos_image_format" {
+  description = "Format of the Talos disk image (raw from factory, or qcow2 if converted)."
+  type        = string
+  default     = "raw"
+
+  validation {
+    condition     = contains(["qcow2", "raw"], var.talos_image_format)
+    error_message = "Image format must be 'qcow2' or 'raw'."
+  }
+}
+
+variable "install_disk" {
+  description = "Disk device Talos installs to inside the VM. Use /dev/vda for virtio."
+  type        = string
+  default     = "/dev/vda"
 }
 
 # --- Network ---
 
+variable "network_bridge" {
+  description = "Host bridge interface for VM networking."
+  type        = string
+  default     = "br0"
+}
+
 variable "network_cidr" {
-  description = "Network CIDR for the cluster (e.g. 192.168.2.0/24). Used with offsets to compute node IPs."
+  description = "Network CIDR for the cluster (e.g. 10.0.0.0/24). Used with offsets to compute node IPs."
   type        = string
   default     = "10.0.0.0/24"
 }
@@ -89,16 +93,12 @@ variable "nameservers" {
   default     = ["1.1.1.1", "8.8.8.8"]
 }
 
-variable "network_bridge" {
-  description = "Proxmox network bridge."
-  type        = string
-  default     = "vmbr0"
-}
+# --- Storage ---
 
-variable "vlan_id" {
-  description = "802.1Q VLAN tag. Null for untagged."
-  type        = number
-  default     = null
+variable "storage_pool" {
+  description = "Libvirt storage pool for VM volumes."
+  type        = string
+  default     = "default"
 }
 
 # --- Control Plane ---
@@ -107,6 +107,11 @@ variable "controlplane_count" {
   description = "Number of control plane nodes (1 or 3 recommended)."
   type        = number
   default     = 1
+
+  validation {
+    condition     = var.controlplane_count >= 1
+    error_message = "At least one control plane node is required."
+  }
 }
 
 variable "controlplane_cpu" {
@@ -115,14 +120,14 @@ variable "controlplane_cpu" {
   default     = 2
 }
 
-variable "controlplane_memory_mb" {
-  description = "RAM in MB per control plane node."
+variable "controlplane_memory" {
+  description = "RAM in MiB per control plane node."
   type        = number
   default     = 4096
 }
 
-variable "controlplane_disk_gb" {
-  description = "Boot disk size in GB per control plane node."
+variable "controlplane_disk" {
+  description = "Boot disk size in GiB per control plane node."
   type        = number
   default     = 20
 }
@@ -133,6 +138,11 @@ variable "worker_count" {
   description = "Number of worker nodes."
   type        = number
   default     = 2
+
+  validation {
+    condition     = var.worker_count >= 0
+    error_message = "Worker count cannot be negative."
+  }
 }
 
 variable "worker_cpu" {
@@ -141,25 +151,19 @@ variable "worker_cpu" {
   default     = 2
 }
 
-variable "worker_memory_mb" {
-  description = "RAM in MB per worker node."
+variable "worker_memory" {
+  description = "RAM in MiB per worker node."
   type        = number
   default     = 4096
 }
 
-variable "worker_disk_gb" {
-  description = "Boot disk size in GB per worker node."
+variable "worker_disk" {
+  description = "Boot disk size in GiB per worker node."
   type        = number
   default     = 50
 }
 
-# --- VM IDs & IP Offsets ---
-
-variable "vm_id_base" {
-  description = "Starting VM ID. Control planes get base+0..N, workers get base+10..N."
-  type        = number
-  default     = 400
-}
+# --- IP Offsets ---
 
 variable "cp_ip_offset" {
   description = "Offset from network base for control plane IPs (e.g. 70 → .70, .71, .72)."
@@ -173,16 +177,10 @@ variable "worker_ip_offset" {
   default     = 80
 }
 
-# --- Storage ---
+# --- Boot ---
 
-variable "image_storage" {
-  description = "Proxmox storage for the Talos ISO image download."
-  type        = string
-  default     = "local"
-}
-
-variable "disk_storage" {
-  description = "Proxmox storage pool for VM disks."
-  type        = string
-  default     = "local-lvm"
+variable "uefi" {
+  description = "Boot VMs with UEFI firmware (recommended)."
+  type        = bool
+  default     = true
 }

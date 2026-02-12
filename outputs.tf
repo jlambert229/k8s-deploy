@@ -48,3 +48,8 @@ output "talos_schematic_id" {
   description = "Talos image factory schematic ID (needed for upgrades)."
   value       = talos_image_factory_schematic.this.id
 }
+
+output "talos_image_url" {
+  description = "Download URL for the Talos nocloud disk image with configured extensions."
+  value       = "${var.talos_factory_url}/image/${talos_image_factory_schematic.this.id}/${var.talos_version}/nocloud-amd64.raw.xz"
+}

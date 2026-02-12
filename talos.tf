@@ -8,8 +8,9 @@ resource "talos_machine_secrets" "this" {
 
 # --- Machine Configurations ---
 # Base configs for control plane and worker node types.
-# Per-node customization (hostname, install disk) is done via config_patches
-# in the talos_machine_configuration_apply resources below.
+# Per-node customization (hostname, install disk, VIP) is done via
+# config_patches in the talos_machine_configuration_apply resources below.
+# Network configuration comes from cloud-init (see main.tf).
 
 data "talos_machine_configuration" "controlplane" {
   cluster_name     = var.cluster_name
@@ -38,7 +39,12 @@ data "talos_client_configuration" "this" {
 
 # --- Apply Configs to Control Plane Nodes ---
 # Pushes the full Talos machine config to each CP node via the Talos API.
-# The node must be reachable (has IP from cloud-init) before this runs.
+# The node is reachable at its static IP (set by cloud-init on first boot).
+#
+# Config patches set:
+#   - hostname
+#   - install disk (/dev/vda for virtio)
+#   - VIP (if cluster_vip is set, for HA control plane)
 
 resource "talos_machine_configuration_apply" "controlplane" {
   depends_on = [module.controlplane]
@@ -47,8 +53,9 @@ resource "talos_machine_configuration_apply" "controlplane" {
   client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.controlplane.machine_configuration
   node                        = each.value.ip
-  config_patches = [
-    yamlencode({
+
+  config_patches = concat(
+    [yamlencode({
       machine = {
         network = {
           hostname = each.key
@@ -57,8 +64,23 @@ resource "talos_machine_configuration_apply" "controlplane" {
           disk = var.install_disk
         }
       }
-    })
-  ]
+    })],
+    # VIP patch — only when cluster_vip is set (HA control plane)
+    var.cluster_vip != null ? [yamlencode({
+      machine = {
+        network = {
+          interfaces = [{
+            deviceSelector = {
+              hardwareAddr = each.value.mac
+            }
+            vip = {
+              ip = var.cluster_vip
+            }
+          }]
+        }
+      }
+    })] : []
+  )
 }
 
 # --- Apply Configs to Worker Nodes ---
@@ -70,6 +92,7 @@ resource "talos_machine_configuration_apply" "worker" {
   client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.worker.machine_configuration
   node                        = each.value.ip
+
   config_patches = [
     yamlencode({
       machine = {
@@ -107,25 +130,6 @@ resource "talos_cluster_kubeconfig" "this" {
   endpoint             = local.first_cp_ip
 }
 
-# --- Write configs to disk ---
-# Written after health check confirms the cluster is ready.
-
-resource "local_sensitive_file" "kubeconfig" {
-  depends_on = [data.talos_cluster_health.this]
-
-  content         = talos_cluster_kubeconfig.this.kubeconfig_raw
-  filename        = "${path.module}/generated/kubeconfig"
-  file_permission = "0600"
-}
-
-resource "local_sensitive_file" "talosconfig" {
-  depends_on = [data.talos_cluster_health.this]
-
-  content         = data.talos_client_configuration.this.talos_config
-  filename        = "${path.module}/generated/talosconfig"
-  file_permission = "0600"
-}
-
 # --- Health Check ---
 # Waits for all nodes to be healthy before marking the deployment complete.
 
@@ -144,4 +148,23 @@ data "talos_cluster_health" "this" {
   timeouts = {
     read = "10m"
   }
+}
+
+# --- Write configs to disk ---
+# Written after health check confirms the cluster is ready.
+
+resource "local_sensitive_file" "kubeconfig" {
+  depends_on = [data.talos_cluster_health.this]
+
+  content         = talos_cluster_kubeconfig.this.kubeconfig_raw
+  filename        = "${path.module}/generated/kubeconfig"
+  file_permission = "0600"
+}
+
+resource "local_sensitive_file" "talosconfig" {
+  depends_on = [data.talos_cluster_health.this]
+
+  content         = data.talos_client_configuration.this.talos_config
+  filename        = "${path.module}/generated/talosconfig"
+  file_permission = "0600"
 }

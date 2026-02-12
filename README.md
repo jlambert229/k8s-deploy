@@ -1,209 +1,167 @@
 # k8s-deploy
 
-Deploys a [Talos Linux](https://www.talos.dev/) Kubernetes cluster on Proxmox VE using Terraform.
+Deploy a [Talos Linux](https://www.talos.dev/) Kubernetes cluster on libvirt/KVM using Terraform.
 
-Uses the [`terraform-proxmox`](https://github.com/jlambert229/terraform-proxmox) module for VM provisioning and the
-[siderolabs/talos](https://registry.terraform.io/providers/siderolabs/talos/latest) provider
-for cluster configuration and bootstrapping.
+Uses [terraform-libvirt](https://github.com/jlambert229/terraform-libvirt) for VM provisioning (with cloud-init for initial networking) and the [Talos Terraform provider](https://registry.terraform.io/providers/siderolabs/talos/latest) for cluster orchestration.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Proxmox VE                       │
-│                                                     │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
-│  │ talos-   │  │ talos-   │  │ talos-   │          │
-│  │ cp-1     │  │ w-1      │  │ w-2      │          │
-│  │ .70      │  │ .80      │  │ .81      │          │
-│  │ CP+etcd  │  │ worker   │  │ worker   │          │
-│  └──────────┘  └──────────┘  └──────────┘          │
-│       │              │              │               │
-│       └──────────────┼──────────────┘               │
-│              <network_cidr>                          │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  KVM Host                                   │
+│                                             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐    │
+│  │ talos-cp-1│ │ talos-w-1│ │ talos-w-2│    │
+│  │  (CP)     │ │ (Worker) │ │ (Worker) │    │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘    │
+│       │             │            │           │
+│  ─────┴─────────────┴────────────┴──── br0  │
+└─────────────────────────────────────────────┘
 ```
+
+Terraform creates VMs from a Talos disk image (CoW clones), assigns static IPs via cloud-init, then configures and bootstraps the cluster through the Talos API.
 
 ## Prerequisites
 
-| Requirement | Version |
-|---|---|
-| Terraform | >= 1.5 |
-| Proxmox VE | 8.x or 9.x |
-| API token | Created on the Proxmox host |
-| Static IPs | Reserved outside your DHCP range |
+- **KVM host** with `qemu-kvm`, `libvirt-daemon-system`, `virtinst`
+- **OVMF firmware** (`ovmf` package) for UEFI boot
+- **Bridge interface** (e.g., `br0`) on the host
+- **Storage pool** configured in libvirt (default: `default`)
+- **Terraform** >= 1.5.0 (project uses 1.14.4 — `tenv tf install`)
 
-## Quick start
+## Quick Start
 
-### 1. Configure
+### 1. Download the Talos Image
+
+First, run a targeted plan to get the image factory URL:
+
+```bash
+tfinit
+tfp -target=talos_image_factory_schematic.this
+```
+
+Then download and decompress the image to the KVM host's storage pool:
+
+```bash
+# The URL includes your configured extensions (e.g., qemu-guest-agent)
+wget -O- "https://factory.talos.dev/image/<schematic-id>/v1.9.2/nocloud-amd64.raw.xz" \
+  | xz -d > /var/lib/libvirt/images/talos-v1.9.2-nocloud.raw
+```
+
+Or use the output after the first apply:
+
+```bash
+terraform output -raw talos_image_url
+```
+
+### 2. Configure Variables
 
 ```bash
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — at minimum set proxmox_endpoint and proxmox_api_token
+# Edit terraform.tfvars with your values
 ```
 
-### 2. Deploy
+Key settings to customize:
+
+- `talos_image_path` — path to the downloaded Talos image
+- `network_cidr`, `gateway` — your network
+- `controlplane_count`, `worker_count` — cluster size
+- `cluster_vip` — set this for HA (3 CP nodes)
+
+### 3. Deploy
 
 ```bash
-terraform init
-terraform plan
-terraform apply
+tfinit
+tfp    # review the plan
+tfa    # apply (requires confirmation)
 ```
 
-### 3. Get credentials
+Terraform will:
+
+1. Create VMs (CoW clones from the Talos image)
+2. Attach cloud-init ISOs with static network config (IP, gateway, DNS)
+3. Generate Talos machine secrets and configs
+4. Apply machine configs to each node (hostname, install disk, VIP)
+5. Bootstrap the first control plane node
+6. Wait for cluster health check
+7. Write `kubeconfig` and `talosconfig` to `generated/`
+
+### 4. Access the Cluster
 
 ```bash
-# Kubeconfig
-terraform output -raw kubeconfig > ~/.kube/talos.kubeconfig
-export KUBECONFIG=~/.kube/talos.kubeconfig
-
-# Talosconfig (for talosctl)
-terraform output -raw talosconfig > ~/.talos/config
-
-# Verify
+# Kubernetes
+export KUBECONFIG=$(pwd)/generated/kubeconfig
 kubectl get nodes
+
+# Talos
+export TALOSCONFIG=$(pwd)/generated/talosconfig
 talosctl health
 ```
-
-## How it works
-
-1. **Image download** — Talos nocloud disk image is built via the [Image Factory](https://factory.talos.dev/)
-   with requested extensions (default: `qemu-guest-agent`) and downloaded to Proxmox storage.
-
-2. **VM creation** — The `terraform-proxmox` module creates VMs with:
-   - Boot disk initialized from the Talos image
-   - Cloud-init config drive for network configuration (static IPs)
-   - No SSH, no cloud-init user account (Talos is immutable)
-
-3. **Config apply** — The Talos provider pushes machine configurations to each node
-   via the Talos API (port 50000). Each node gets its hostname and install disk path.
-
-4. **Bootstrap** — The first control plane node is bootstrapped, initializing etcd
-   and the Kubernetes control plane. Additional nodes join automatically.
-
-5. **Health check** — Terraform waits for all nodes to report healthy before completing.
-
-## Default topology
-
-| Role | Count | VM IDs | IPs | CPU | RAM | Disk |
-|---|---|---|---|---|---|---|
-| Control plane | 1 | 400 | .70 | 2 | 4 GB | 20 GB |
-| Worker | 2 | 410-411 | .80-.81 | 2 | 4 GB | 50 GB |
-
-## Scaling
-
-**Add workers** — increase `worker_count`:
-
-```hcl
-worker_count = 4   # .80, .81, .82, .83
-```
-
-**HA control plane** — set 3 CPs + a VIP:
-
-```hcl
-controlplane_count = 3
-cluster_vip        = "10.0.0.69"
-```
-
-## Talos extensions
-
-The `talos_extensions` variable controls which system extensions are baked into the image.
-Default: `["qemu-guest-agent"]`.
-
-Common additions:
-
-```hcl
-talos_extensions = [
-  "qemu-guest-agent",
-  "iscsi-tools",        # For iSCSI storage (Longhorn, etc.)
-  "util-linux-tools",   # For additional utilities
-]
-```
-
-## Autoscaling
-
-This repo includes comprehensive autoscaling for both pods and nodes:
-
-- **HPA (Horizontal Pod Autoscaler)** - Scale pod replicas based on CPU/memory
-- **VPA (Vertical Pod Autoscaler)** - Adjust pod resource requests/limits
-- **Node Autoscaler** - Add/remove worker VMs based on cluster load
-
-See **[AUTOSCALING.md](AUTOSCALING.md)** for full documentation and deployment instructions.
-
-Quick deploy:
-
-```bash
-# Deploy pod autoscaling (HPA + VPA)
-./addons/deploy-autoscaling.sh
-
-# Enable node autoscaling (see AUTOSCALING.md)
-cd addons/node-autoscaler
-pip install -r requirements.txt
-python autoscaler-webhook.py
-```
-
-## Upgrading Talos
-
-1. Get the schematic ID: `terraform output talos_schematic_id`
-2. Run the upgrade:
-   ```bash
-   talosctl upgrade \
-     --image factory.talos.dev/installer/<schematic-id>:v1.9.3 \
-     --preserve
-   ```
-
-## Destroying
-
-```bash
-terraform destroy
-```
-
-This removes all VMs and the downloaded Talos image from Proxmox.
 
 ## Variables
 
 | Variable | Default | Description |
-|---|---|---|
-| `proxmox_endpoint` | *required* | Proxmox API URL |
-| `proxmox_api_token` | *required* | API token (sensitive) |
-| `proxmox_node` | `"pve"` | Target node |
-| `cluster_name` | `"talos"` | Cluster name |
-| `cluster_vip` | `null` | VIP for HA (set with 3 CPs) |
-| `talos_version` | `"v1.9.2"` | Talos version |
-| `talos_extensions` | `["qemu-guest-agent"]` | Image extensions |
-| `network_cidr` | `"10.0.0.0/24"` | Network CIDR |
-| `gateway` | `"10.0.0.1"` | Default gateway |
+|----------|---------|-------------|
+| `libvirt_uri` | `qemu:///system` | Libvirt connection URI |
+| `cluster_name` | `talos` | Cluster name (used in VM names) |
+| `cluster_vip` | `null` | VIP for HA control plane |
+| `talos_version` | `v1.9.2` | Talos Linux version |
+| `talos_extensions` | `["qemu-guest-agent"]` | System extensions |
+| `talos_image_path` | *(required)* | Path to Talos image on KVM host |
+| `talos_image_format` | `raw` | Image format (`raw` or `qcow2`) |
+| `install_disk` | `/dev/vda` | Talos install disk (virtio) |
+| `network_bridge` | `br0` | Host bridge interface |
+| `network_cidr` | `10.0.0.0/24` | Network CIDR |
+| `gateway` | `10.0.0.1` | Default gateway |
 | `nameservers` | `["1.1.1.1", "8.8.8.8"]` | DNS servers |
-| `controlplane_count` | `1` | Number of CPs |
-| `controlplane_cpu` | `2` | CP vCPUs |
-| `controlplane_memory_mb` | `4096` | CP RAM (MB) |
-| `controlplane_disk_gb` | `20` | CP disk (GB) |
-| `worker_count` | `2` | Number of workers |
-| `worker_cpu` | `2` | Worker vCPUs |
-| `worker_memory_mb` | `4096` | Worker RAM (MB) |
-| `worker_disk_gb` | `50` | Worker disk (GB) |
-| `vm_id_base` | `400` | Starting VM ID |
-| `cp_ip_offset` | `70` | CP IP offset from network base |
-| `worker_ip_offset` | `80` | Worker IP offset from network base |
-| `image_storage` | `"local"` | ISO storage |
-| `disk_storage` | `"local-lvm"` | Disk storage |
+| `storage_pool` | `default` | Libvirt storage pool |
+| `controlplane_count` | `1` | CP nodes (1 or 3) |
+| `controlplane_cpu` | `2` | vCPUs per CP |
+| `controlplane_memory` | `4096` | MiB per CP |
+| `controlplane_disk` | `20` | GiB per CP |
+| `worker_count` | `2` | Worker nodes |
+| `worker_cpu` | `2` | vCPUs per worker |
+| `worker_memory` | `4096` | MiB per worker |
+| `worker_disk` | `50` | GiB per worker |
+| `cp_ip_offset` | `70` | CP IP offset from CIDR |
+| `worker_ip_offset` | `80` | Worker IP offset from CIDR |
+| `uefi` | `true` | UEFI boot |
 
 ## Outputs
 
 | Output | Description |
-|---|---|
-| `kubeconfig` | Admin kubeconfig (sensitive) |
-| `talosconfig` | Talos client config (sensitive) |
-| `controlplane_ips` | Map of CP name → IP |
-| `worker_ips` | Map of worker name → IP |
-| `cluster_endpoint` | Kubernetes API URL |
-| `talos_schematic_id` | Image Factory schematic (for upgrades) |
+|--------|-------------|
+| `kubeconfig` | Kubernetes admin kubeconfig (sensitive) |
+| `talosconfig` | Talos client configuration (sensitive) |
+| `cluster_endpoint` | Kubernetes API endpoint URL |
+| `controlplane_ips` | CP node name → IP mapping |
+| `worker_ips` | Worker node name → IP mapping |
+| `talos_schematic_id` | Image factory schematic (for upgrades) |
+| `talos_image_url` | Download URL for the Talos image |
 
-## IP layout (defaults)
+## Networking
 
-| Role | IP offset | Example (`10.0.0.0/24`) |
-|---|---|---|
-| Control plane | `.70` | `10.0.0.70` |
-| Workers | `.80+` | `10.0.0.80`, `10.0.0.81`, ... |
+VMs use **bridge networking** — they connect directly to the host's bridge interface and appear as peers on the physical network.
 
-IP offsets are configurable via `cp_ip_offset` and `worker_ip_offset`.
+**How IP assignment works:**
+
+1. Each VM gets a **deterministic MAC address** (QEMU OUI `52:54:00`)
+2. A **cloud-init ISO** is attached with static network config (NoCloud datasource)
+3. Talos reads the cloud-init network config on first boot and configures the static IP
+4. The Talos API becomes reachable at the static IP in maintenance mode
+5. Terraform applies the full machine config via the Talos API
+
+No DHCP reservations are needed — cloud-init handles initial IP assignment, just like the Proxmox cloud-init approach.
+
+**HA with VIP:** Set `cluster_vip` and use 3 CP nodes. Talos manages the VIP using VRRP — one CP node holds the VIP at any time, and it floats to a healthy peer on failure.
+
+## Upgrades
+
+To upgrade Talos:
+
+1. Update `talos_version` in your tfvars
+2. Download the new image (check `terraform output talos_image_url`)
+3. Update `talos_image_path` if the filename changed
+4. `terraform apply`
+
+The schematic ID is tracked as an output for use with `talosctl upgrade`.

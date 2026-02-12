@@ -1,35 +1,20 @@
 # Terraform
 .terraform/
 *.tfstate
-*.tfstate.*
-crash.log
-crash.*.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
-
-# Sensitive variable files
-terraform.tfvars
-*.auto.tfvars
+*.tfstate.backup
+*.tfplan
+.terraform.lock.hcl
 
 # Generated configs
 generated/
-*.kubeconfig
-*.talosconfig
 
-# SSH keys
-*.pem
-*.key
-id_*
+# Sensitive
+*.auto.tfvars
+terraform.tfvars
 
-# OS
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
+# Editor
 *.swp
 *.swo
 *~
+.idea/
+.vscode/
