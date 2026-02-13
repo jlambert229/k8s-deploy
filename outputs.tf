@@ -16,13 +16,8 @@ output "kubeconfig" {
 
 output "kubernetes_client_configuration" {
   description = "Kubernetes client configuration components."
-  value = {
-    host               = talos_cluster_kubeconfig.this.kubernetes_client_configuration.host
-    ca_certificate     = talos_cluster_kubeconfig.this.kubernetes_client_configuration.ca_certificate
-    client_certificate = talos_cluster_kubeconfig.this.kubernetes_client_configuration.client_certificate
-    client_key         = talos_cluster_kubeconfig.this.kubernetes_client_configuration.client_key
-  }
-  sensitive = true
+  value       = local.k8s_client_config
+  sensitive   = true
 }
 
 # --- Node IPs ---

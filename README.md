@@ -26,7 +26,7 @@ Terraform creates VMs from a Talos disk image (CoW clones), assigns static IPs v
 
 ## Prerequisites
 
-- **KVM host** with `qemu-kvm`, `libvirt-daemon-system`, `virtinst`
+- **KVM host** with `qemu-kvm`, `libvirt-daemon-system`, `virtinst`, `cloud-image-utils` (for `cloud-localds`)
 - **OVMF firmware** (`ovmf` package) for UEFI boot
 - **Bridge interface** (e.g., `br0`) on the host
 - **Storage pool** configured in libvirt (default: `default`)
@@ -67,6 +67,8 @@ cp terraform.tfvars.example terraform.tfvars
 Key settings to customize:
 
 - `talos_image_path` — path to the downloaded Talos image
+- `libvirt_uri` — `qemu:///system` (run on host) or `qemu+ssh://user@host/system` (run remotely)
+- `cloudinit_iso_dir` — where cloud-init ISOs live (default `/data/libvirt/images`)
 - `network_cidr`, `gateway` — your network
 - `controlplane_count`, `worker_count` — cluster size
 - `cluster_vip` — set this for HA (3 CP nodes)
@@ -118,6 +120,7 @@ talosctl health
 | `gateway` | `10.0.0.1` | Default gateway |
 | `nameservers` | `["1.1.1.1", "8.8.8.8"]` | DNS servers |
 | `storage_pool` | `default` | Libvirt storage pool |
+| `cloudinit_iso_dir` | `/data/libvirt/images` | Directory for cloud-init ISOs on host |
 | `controlplane_count` | `1` | CP nodes (1 or 3) |
 | `controlplane_cpu` | `2` | vCPUs per CP |
 | `controlplane_memory` | `4096` | MiB per CP |
@@ -129,6 +132,13 @@ talosctl health
 | `cp_ip_offset` | `70` | CP IP offset from CIDR |
 | `worker_ip_offset` | `80` | Worker IP offset from CIDR |
 | `uefi` | `true` | UEFI boot |
+| `nfs_server` | `null` | NFS server IP (enables CSI driver) |
+| `nfs_appdata_share` | `/volume1/nfs01/k8s-appdata` | NFS share for PVCs |
+
+**Libvirt connection:**
+
+- `qemu:///system` — Run Terraform on the KVM host. Cloud-init ISOs are created locally.
+- `qemu+ssh://user@host/system` — Run Terraform from your workstation. Cloud-init ISOs are streamed over SSH to the host.
 
 ## Outputs
 
@@ -157,6 +167,8 @@ VMs use **bridge networking** — they connect directly to the host's bridge int
 No DHCP reservations are needed — cloud-init handles initial IP assignment, just like the Proxmox cloud-init approach.
 
 **HA with VIP:** Set `cluster_vip` and use 3 CP nodes. Talos manages the VIP using VRRP — one CP node holds the VIP at any time, and it floats to a healthy peer on failure.
+
+**Health check:** Terraform waits for cluster health before writing kubeconfig/talosconfig and installing NFS. If the health check times out (e.g. qemu-guest-agent keeps nodes in "booting" without a virtio-serial channel), set `talos_extensions = []` to remove the extension.
 
 ## Upgrades
 

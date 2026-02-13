@@ -47,7 +47,7 @@ data "talos_client_configuration" "this" {
 #   - VIP (if cluster_vip is set, for HA control plane)
 
 resource "talos_machine_configuration_apply" "controlplane" {
-  depends_on = [module.controlplane]
+  depends_on = [module.node]
   for_each   = local.controlplanes
 
   client_configuration        = talos_machine_secrets.this.client_configuration
@@ -86,7 +86,7 @@ resource "talos_machine_configuration_apply" "controlplane" {
 # --- Apply Configs to Worker Nodes ---
 
 resource "talos_machine_configuration_apply" "worker" {
-  depends_on = [module.worker]
+  depends_on = [module.node]
   for_each   = local.workers
 
   client_configuration        = talos_machine_secrets.this.client_configuration
@@ -131,8 +131,10 @@ resource "talos_cluster_kubeconfig" "this" {
 }
 
 # --- Health Check ---
-# Waits for all nodes to be healthy before marking the deployment complete.
-
+# Validates cluster health before NFS/Helm resources run. If this times out
+# (e.g. qemu-guest-agent keeps nodes in "booting" without virtio-serial),
+# set talos_extensions = [] to remove the extension or add a virtio channel
+# to the VM module.
 data "talos_cluster_health" "this" {
   depends_on = [
     talos_machine_bootstrap.this,
@@ -146,12 +148,11 @@ data "talos_cluster_health" "this" {
   endpoints            = data.talos_client_configuration.this.endpoints
 
   timeouts = {
-    read = "10m"
+    read = "15m"
   }
 }
 
 # --- Write configs to disk ---
-# Written after health check confirms the cluster is ready.
 
 resource "local_sensitive_file" "kubeconfig" {
   depends_on = [data.talos_cluster_health.this]

@@ -24,7 +24,8 @@ gateway        = "10.0.0.1"
 nameservers    = ["1.1.1.1", "8.8.8.8"]
 
 # --- Storage ---
-storage_pool = "default"
+storage_pool      = "default"
+cloudinit_iso_dir = "/data/libvirt/images"  # or /var/lib/libvirt/images for default pool
 
 # --- Control Plane ---
 controlplane_count  = 1

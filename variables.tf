@@ -101,6 +101,17 @@ variable "storage_pool" {
   default     = "default"
 }
 
+variable "cloudinit_iso_dir" {
+  description = "Directory for cloud-init ISOs on the KVM host. Used for both local (qemu:///system) and remote (qemu+ssh://) connections."
+  type        = string
+  default     = "/data/libvirt/images"
+
+  validation {
+    condition     = startswith(var.cloudinit_iso_dir, "/")
+    error_message = "cloudinit_iso_dir must be an absolute path."
+  }
+}
+
 # --- Control Plane ---
 
 variable "controlplane_count" {
@@ -183,4 +194,24 @@ variable "uefi" {
   description = "Boot VMs with UEFI firmware (recommended)."
   type        = bool
   default     = true
+}
+
+# --- NFS Storage ---
+
+variable "nfs_server" {
+  description = "NFS server IP (e.g. Synology NAS)."
+  type        = string
+  default     = null
+}
+
+variable "nfs_appdata_share" {
+  description = "NFS share path for dynamic PVC provisioning (StorageClass nfs-appdata)."
+  type        = string
+  default     = "/volume1/nfs01/k8s-appdata"
+}
+
+variable "nfs_csi_version" {
+  description = "Helm chart version for csi-driver-nfs."
+  type        = string
+  default     = "v4.9.0"
 }
