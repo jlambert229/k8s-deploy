@@ -126,15 +126,6 @@ data "talos_cluster_health" "this" {
 
 # --- Write configs to disk ---
 
-moved {
-  from = local_sensitive_file.kubeconfig
-  to   = local_sensitive_file.generated["kubeconfig"]
-}
-moved {
-  from = local_sensitive_file.talosconfig
-  to   = local_sensitive_file.generated["talosconfig"]
-}
-
 resource "local_sensitive_file" "generated" {
   for_each = {
     kubeconfig  = talos_cluster_kubeconfig.this.kubeconfig_raw

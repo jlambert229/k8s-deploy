@@ -79,6 +79,11 @@ variable "network_cidr" {
   description = "Network CIDR for the cluster (e.g. 10.0.0.0/24). Used with offsets to compute node IPs."
   type        = string
   default     = "10.0.0.0/24"
+
+  validation {
+    condition     = can(cidrhost(var.network_cidr, 0))
+    error_message = "network_cidr must be a valid IPv4 CIDR (e.g. 10.0.0.0/24)."
+  }
 }
 
 variable "gateway" {

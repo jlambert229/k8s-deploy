@@ -9,23 +9,23 @@ terraform {
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = ">= 0.9.0"
+      version = "~> 0.9"
     }
     talos = {
       source  = "siderolabs/talos"
-      version = ">= 0.7.0"
+      version = "~> 0.7"
     }
     local = {
       source  = "hashicorp/local"
-      version = ">= 2.0.0"
+      version = "~> 2.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = ">= 2.25.0"
+      version = "~> 2.25"
     }
     helm = {
       source  = "hashicorp/helm"
-      version = ">= 2.12.0"
+      version = "~> 2.12"
     }
   }
 }
