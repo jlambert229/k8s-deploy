@@ -7,23 +7,15 @@ resource "talos_machine_secrets" "this" {
 }
 
 # --- Machine Configurations ---
-# Base configs for control plane and worker node types.
-# Per-node customization (hostname, install disk, VIP) is done via
-# config_patches in the talos_machine_configuration_apply resources below.
-# Network configuration comes from cloud-init (see main.tf).
+# Base configs for control plane and worker node types. Per-node customization
+# (hostname, install disk, VIP) is done via config_patches. Network from cloud-init (main.tf).
 
-data "talos_machine_configuration" "controlplane" {
+data "talos_machine_configuration" "this" {
+  for_each = toset(["controlplane", "worker"])
+
   cluster_name     = var.cluster_name
   cluster_endpoint = "https://${local.cluster_endpoint}:6443"
-  machine_type     = "controlplane"
-  machine_secrets  = talos_machine_secrets.this.machine_secrets
-  talos_version    = var.talos_version
-}
-
-data "talos_machine_configuration" "worker" {
-  cluster_name     = var.cluster_name
-  cluster_endpoint = "https://${local.cluster_endpoint}:6443"
-  machine_type     = "worker"
+  machine_type     = each.key
   machine_secrets  = talos_machine_secrets.this.machine_secrets
   talos_version    = var.talos_version
 }
@@ -51,20 +43,11 @@ resource "talos_machine_configuration_apply" "controlplane" {
   for_each   = local.controlplanes
 
   client_configuration        = talos_machine_secrets.this.client_configuration
-  machine_configuration_input = data.talos_machine_configuration.controlplane.machine_configuration
+  machine_configuration_input = data.talos_machine_configuration.this["controlplane"].machine_configuration
   node                        = each.value.ip
 
   config_patches = concat(
-    [yamlencode({
-      machine = {
-        network = {
-          hostname = each.key
-        }
-        install = {
-          disk = var.install_disk
-        }
-      }
-    })],
+    [local.talos_base_patches[each.key]],
     # VIP patch — only when cluster_vip is set (HA control plane)
     var.cluster_vip != null ? [yamlencode({
       machine = {
@@ -90,21 +73,10 @@ resource "talos_machine_configuration_apply" "worker" {
   for_each   = local.workers
 
   client_configuration        = talos_machine_secrets.this.client_configuration
-  machine_configuration_input = data.talos_machine_configuration.worker.machine_configuration
+  machine_configuration_input = data.talos_machine_configuration.this["worker"].machine_configuration
   node                        = each.value.ip
 
-  config_patches = [
-    yamlencode({
-      machine = {
-        network = {
-          hostname = each.key
-        }
-        install = {
-          disk = var.install_disk
-        }
-      }
-    })
-  ]
+  config_patches = [local.talos_base_patches[each.key]]
 }
 
 # --- Bootstrap ---
@@ -154,18 +126,24 @@ data "talos_cluster_health" "this" {
 
 # --- Write configs to disk ---
 
-resource "local_sensitive_file" "kubeconfig" {
-  depends_on = [data.talos_cluster_health.this]
-
-  content         = talos_cluster_kubeconfig.this.kubeconfig_raw
-  filename        = "${path.module}/generated/kubeconfig"
-  file_permission = "0600"
+moved {
+  from = local_sensitive_file.kubeconfig
+  to   = local_sensitive_file.generated["kubeconfig"]
+}
+moved {
+  from = local_sensitive_file.talosconfig
+  to   = local_sensitive_file.generated["talosconfig"]
 }
 
-resource "local_sensitive_file" "talosconfig" {
+resource "local_sensitive_file" "generated" {
+  for_each = {
+    kubeconfig  = talos_cluster_kubeconfig.this.kubeconfig_raw
+    talosconfig = data.talos_client_configuration.this.talos_config
+  }
+
   depends_on = [data.talos_cluster_health.this]
 
-  content         = data.talos_client_configuration.this.talos_config
-  filename        = "${path.module}/generated/talosconfig"
+  content         = each.value
+  filename        = "${path.module}/generated/${each.key}"
   file_permission = "0600"
 }

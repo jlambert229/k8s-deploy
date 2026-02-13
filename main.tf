@@ -2,10 +2,6 @@
 # Local (qemu:///system): script creates ISO on the same host. Remote (qemu+ssh://): streams via SSH.
 # Talos reads network-config on first boot for initial IP assignment.
 
-locals {
-  cloudinit_iso_path = { for k in keys(local.all_nodes) : k => "${var.cloudinit_iso_dir}/${k}-cloudinit.iso" }
-}
-
 resource "terraform_data" "cloudinit" {
   for_each = local.all_nodes
 
@@ -25,7 +21,7 @@ resource "terraform_data" "cloudinit" {
   provisioner "local-exec" {
     command = "bash ${path.module}/scripts/create-cloudinit-iso.sh"
     environment = {
-      LIBVIRT_SSH_DEST   = local.libvirt_ssh_dest != null ? local.libvirt_ssh_dest : ""
+      LIBVIRT_SSH_DEST   = coalesce(local.libvirt_ssh_dest, "")
       CLOUDINIT_ISO_PATH = local.cloudinit_iso_path[each.key]
       USER_DATA_B64      = base64encode(local.cloudinit_user_data[each.key])
       META_DATA_B64      = base64encode(local.cloudinit_meta_data[each.key])

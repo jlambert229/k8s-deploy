@@ -50,5 +50,17 @@ locals {
 
   all_nodes = merge(local.controlplanes, local.workers)
 
+  cloudinit_iso_path = { for k in keys(local.all_nodes) : k => "${var.cloudinit_iso_dir}/${k}-cloudinit.iso" }
+
+  # Base Talos patch: hostname + install disk (shared by CP and workers)
+  talos_base_patches = {
+    for k in keys(local.all_nodes) : k => yamlencode({
+      machine = {
+        network = { hostname = k }
+        install = { disk = var.install_disk }
+      }
+    })
+  }
+
   k8s_client_config = talos_cluster_kubeconfig.this.kubernetes_client_configuration
 }
