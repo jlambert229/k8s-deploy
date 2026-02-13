@@ -1,7 +1,10 @@
+# k8s-deploy — Terraform variables
+# Copy to terraform.tfvars and edit for your environment.
+
 # --- Libvirt ---
-# Local connection (running terraform on the KVM host):
+# Run Terraform on the KVM host:
 libvirt_uri = "qemu:///system"
-# Remote connection over SSH:
+# Or run remotely over SSH:
 # libvirt_uri = "qemu+ssh://user@kvm-host/system"
 
 # --- Cluster ---
@@ -46,3 +49,8 @@ worker_ip_offset = 80
 
 # --- Boot ---
 uefi = true
+
+# --- NFS (optional) ---
+# Uncomment to enable NFS CSI + nfs-appdata StorageClass:
+# nfs_server        = "192.168.1.100"
+# nfs_appdata_share = "/volume1/nfs01/k8s-appdata"
